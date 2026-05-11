@@ -14,14 +14,19 @@ final class RunPartner_Events_CPT {
     private const TAXONOMY  = 'event_type';
 
     private const META_FIELDS = [
-        'subtitle'     => '_rp_event_subtitle',
-        'location'     => '_rp_event_location',
-        'country'      => '_rp_event_country',
-        'month'        => '_rp_event_month',
-        'website'      => '_rp_event_website',
-        'registration' => '_rp_event_registration',
-        'year'         => '_rp_event_year',
-        'distances'    => '_rp_event_distances',
+        'subtitle'           => '_rp_event_subtitle',
+        'location'           => '_rp_event_location',
+        'country'            => '_rp_event_country',
+        'month'              => '_rp_event_month',
+        'website'            => '_rp_event_website',
+        'registration'       => '_rp_event_registration',
+        'year'               => '_rp_event_year',
+        'distances'          => '_rp_event_distances',
+        'date'               => '_rp_event_date',
+        'course_record'      => '_rp_event_course_record',
+        'course_record_holder' => '_rp_event_course_record_holder',
+        'history'            => '_rp_event_history',
+        'past_edition'       => '_rp_event_past_edition',
     ];
 
     private const ALLOWED_DISTANCES = [
@@ -188,6 +193,11 @@ final class RunPartner_Events_CPT {
                     'type'  => 'array',
                     'items' => ['type' => 'string', 'enum' => self::ALLOWED_DISTANCES],
                 ],
+                'date'                => ['type' => 'string', 'format' => 'date'],
+                'course_record'       => ['type' => 'string'],
+                'course_record_holder' => ['type' => 'string'],
+                'history'             => ['type' => 'string'],
+                'past_edition'        => ['type' => 'integer', 'minimum' => 0],
             ],
         ];
     }
@@ -247,6 +257,30 @@ final class RunPartner_Events_CPT {
         ]);
 
         $this->render_distance_checkboxes($post->ID);
+
+        $this->render_field($post->ID, 'date', [
+            'label'       => __('Event Date', 'runpartner'),
+            'type'        => 'date',
+        ]);
+
+        $this->render_field($post->ID, 'course_record', [
+            'label'       => __('Course Record', 'runpartner'),
+            'type'        => 'text',
+            'placeholder' => __('e.g., 2:01:09', 'runpartner'),
+        ]);
+
+        $this->render_field($post->ID, 'course_record_holder', [
+            'label'       => __('Course Record Holder', 'runpartner'),
+            'type'        => 'text',
+            'placeholder' => __('Athlete name', 'runpartner'),
+        ]);
+
+        $this->render_field($post->ID, 'history', [
+            'label' => __('Event History', 'runpartner'),
+            'type'  => 'textarea',
+        ]);
+
+        $this->render_past_edition_dropdown($post->ID);
 
         echo '</div>';
     }
@@ -310,10 +344,11 @@ final class RunPartner_Events_CPT {
 
     private function sanitize_meta_value(string $key, mixed $value): mixed {
         return match ($key) {
-            'website', 'registration' => esc_url_raw($value),
-            'year'                    => absint($value),
-            'distances'               => $value,
-            default                   => sanitize_text_field($value),
+            'website', 'registration'   => esc_url_raw($value),
+            'year', 'past_edition'      => absint($value),
+            'distances'                 => $value,
+            'history'                   => sanitize_textarea_field($value),
+            default                     => sanitize_text_field($value),
         };
     }
 
@@ -342,6 +377,12 @@ final class RunPartner_Events_CPT {
         $query_params['month'] = [
             'description' => __('Filter by month', 'runpartner'),
             'type'        => 'string',
+        ];
+
+        $query_params['event_date'] = [
+            'description' => __('Filter by event date (YYYY-MM-DD)', 'runpartner'),
+            'type'        => 'string',
+            'format'      => 'date',
         ];
 
         return $query_params;
@@ -384,6 +425,13 @@ final class RunPartner_Events_CPT {
             $meta_query[] = [
                 'key'     => '_rp_event_month',
                 'value'   => sanitize_text_field($request->get_param('month')),
+            ];
+        }
+
+        if ($request->get_param('event_date')) {
+            $meta_query[] = [
+                'key'     => '_rp_event_date',
+                'value'   => sanitize_text_field($request->get_param('event_date')),
             ];
         }
 
@@ -444,6 +492,33 @@ final class RunPartner_Events_CPT {
                 ],
                 'default'     => [],
             ],
+            'date' => [
+                'type'        => 'string',
+                'format'      => 'date',
+                'description' => 'Event date (YYYY-MM-DD)',
+                'default'     => '',
+            ],
+            'course_record' => [
+                'type'        => 'string',
+                'description' => 'Course record time',
+                'default'     => '',
+            ],
+            'course_record_holder' => [
+                'type'        => 'string',
+                'description' => 'Course record holder name',
+                'default'     => '',
+            ],
+            'history' => [
+                'type'        => 'string',
+                'description' => 'Event history narrative',
+                'default'     => '',
+            ],
+            'past_edition' => [
+                'type'        => 'integer',
+                'description' => 'Past edition post ID',
+                'minimum'     => 0,
+                'default'     => 0,
+            ],
         ];
     }
 
@@ -475,25 +550,36 @@ final class RunPartner_Events_CPT {
             return;
         }
 
+        $is_textarea = isset($args['type']) && 'textarea' === $args['type'];
+        $is_url      = isset($args['type']) && 'url' === $args['type'];
         ?>
         <p>
             <label for="<?php echo esc_attr($meta_key); ?>"><?php echo esc_html($args['label']); ?></label>
-            <input
-                type="<?php echo esc_attr($args['type']); ?>"
-                id="<?php echo esc_attr($meta_key); ?>"
-                name="<?php echo esc_attr($meta_key); ?>"
-                value="<?php echo esc_attr($value); ?>"
-                class="<?php echo isset($args['type']) && 'url' === $args['type'] ? 'large-text' : 'regular-text'; ?>"
-                <?php if (isset($args['placeholder'])) : ?>
-                    placeholder="<?php echo esc_attr($args['placeholder']); ?>"
-                <?php endif; ?>
-                <?php if (isset($args['min'])) : ?>
-                    min="<?php echo esc_attr($args['min']); ?>"
-                <?php endif; ?>
-                <?php if (isset($args['max'])) : ?>
-                    max="<?php echo esc_attr($args['max']); ?>"
-                <?php endif; ?>
-            />
+            <?php if ($is_textarea) : ?>
+                <textarea
+                    id="<?php echo esc_attr($meta_key); ?>"
+                    name="<?php echo esc_attr($meta_key); ?>"
+                    class="large-text"
+                    rows="5"
+                ><?php echo esc_textarea($value); ?></textarea>
+            <?php else : ?>
+                <input
+                    type="<?php echo esc_attr($args['type']); ?>"
+                    id="<?php echo esc_attr($meta_key); ?>"
+                    name="<?php echo esc_attr($meta_key); ?>"
+                    value="<?php echo esc_attr($value); ?>"
+                    class="<?php echo $is_url ? 'large-text' : 'regular-text'; ?>"
+                    <?php if (isset($args['placeholder'])) : ?>
+                        placeholder="<?php echo esc_attr($args['placeholder']); ?>"
+                    <?php endif; ?>
+                    <?php if (isset($args['min'])) : ?>
+                        min="<?php echo esc_attr($args['min']); ?>"
+                    <?php endif; ?>
+                    <?php if (isset($args['max'])) : ?>
+                        max="<?php echo esc_attr($args['max']); ?>"
+                    <?php endif; ?>
+                />
+            <?php endif; ?>
         </p>
         <?php
     }
@@ -519,6 +605,36 @@ final class RunPartner_Events_CPT {
                 <?php endforeach; ?>
             </div>
         </fieldset>
+        <?php
+    }
+
+    private function render_past_edition_dropdown(int $post_id): void {
+        $meta_key   = self::META_FIELDS['past_edition'];
+        $saved      = (int) get_post_meta($post_id, $meta_key, true);
+        $editions   = get_posts([
+            'post_type'      => self::POST_TYPE,
+            'post_status'    => 'publish',
+            'posts_per_page' => -1,
+            'post__not_in'   => [$post_id],
+            'orderby'        => 'title',
+            'order'          => 'ASC',
+        ]);
+        ?>
+        <p>
+            <label for="<?php echo esc_attr($meta_key); ?>"><?php esc_html_e('Past Edition', 'runpartner'); ?></label>
+            <select
+                id="<?php echo esc_attr($meta_key); ?>"
+                name="<?php echo esc_attr($meta_key); ?>"
+                class="regular-text"
+            >
+                <option value=""><?php esc_html_e('None', 'runpartner'); ?></option>
+                <?php foreach ($editions as $edition) : ?>
+                    <option value="<?php echo esc_attr($edition->ID); ?>" <?php selected($saved, $edition->ID); ?>>
+                        <?php echo esc_html(get_the_title($edition->ID)); ?>
+                    </option>
+                <?php endforeach; ?>
+            </select>
+        </p>
         <?php
     }
 }
