@@ -27,6 +27,7 @@ final class RunPartner_Events_CPT {
         'course_record_holder' => '_rp_event_course_record_holder',
         'history'            => '_rp_event_history',
         'past_edition'       => '_rp_event_past_edition',
+        'featured'           => '_rp_event_featured',
     ];
 
     private const ALLOWED_DISTANCES = [
@@ -123,6 +124,8 @@ final class RunPartner_Events_CPT {
                         $value = $value !== '' ? (int) $value : 0;
                     } elseif ($field_key === 'distances') {
                         $value = is_array($value) ? $value : ($value !== '' ? explode(',', $value) : []);
+                    } elseif ($field_key === 'featured') {
+                        $value = (bool) $value;
                     } else {
                         $value = $value !== '' ? $value : '';
                     }
@@ -198,6 +201,7 @@ final class RunPartner_Events_CPT {
                 'course_record_holder' => ['type' => 'string'],
                 'history'             => ['type' => 'string'],
                 'past_edition'        => ['type' => 'integer', 'minimum' => 0],
+                'featured'            => ['type' => 'boolean'],
             ],
         ];
     }
@@ -282,6 +286,8 @@ final class RunPartner_Events_CPT {
 
         $this->render_past_edition_dropdown($post->ID);
 
+        $this->render_featured_checkbox($post->ID);
+
         echo '</div>';
     }
 
@@ -346,6 +352,7 @@ final class RunPartner_Events_CPT {
         return match ($key) {
             'website', 'registration'   => esc_url_raw($value),
             'year', 'past_edition'      => absint($value),
+            'featured'                  => absint($value),
             'distances'                 => $value,
             'history'                   => sanitize_textarea_field($value),
             default                     => sanitize_text_field($value),
@@ -519,6 +526,11 @@ final class RunPartner_Events_CPT {
                 'minimum'     => 0,
                 'default'     => 0,
             ],
+            'featured' => [
+                'type'        => 'boolean',
+                'description' => 'Mark as featured event',
+                'default'     => false,
+            ],
         ];
     }
 
@@ -605,6 +617,24 @@ final class RunPartner_Events_CPT {
                 <?php endforeach; ?>
             </div>
         </fieldset>
+        <?php
+    }
+
+    private function render_featured_checkbox(int $post_id): void {
+        $meta_key = self::META_FIELDS['featured'];
+        $checked  = (bool) get_post_meta($post_id, $meta_key, true);
+        ?>
+        <p>
+            <label>
+                <input
+                    type="checkbox"
+                    name="<?php echo esc_attr($meta_key); ?>"
+                    value="1"
+                    <?php checked($checked); ?>
+                />
+                <?php esc_html_e('Mark as featured event', 'runpartner'); ?>
+            </label>
+        </p>
         <?php
     }
 
