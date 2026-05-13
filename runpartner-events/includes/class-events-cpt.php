@@ -26,7 +26,7 @@ final class RunPartner_Events_CPT {
         'course_record'      => '_rp_event_course_record',
         'course_record_holder' => '_rp_event_course_record_holder',
         'history'            => '_rp_event_history',
-        'past_edition'       => '_rp_event_past_edition',
+        'editions'           => '_rp_event_editions',
         'featured'           => '_rp_event_featured',
     ];
 
@@ -200,7 +200,16 @@ final class RunPartner_Events_CPT {
                 'course_record'       => ['type' => 'string'],
                 'course_record_holder' => ['type' => 'string'],
                 'history'             => ['type' => 'string'],
-                'past_edition'        => ['type' => 'integer', 'minimum' => 0],
+                'editions'            => [
+                    'type'  => 'array',
+                    'items' => [
+                        'type'       => 'object',
+                        'properties' => [
+                            'year'   => ['type' => 'string'],
+                            'report' => ['type' => 'string'],
+                        ],
+                    ],
+                ],
                 'featured'            => ['type' => 'boolean'],
             ],
         ];
@@ -284,7 +293,7 @@ final class RunPartner_Events_CPT {
             'type'  => 'textarea',
         ]);
 
-        $this->render_past_edition_dropdown($post->ID);
+        $this->render_editions_field($post->ID);
 
         $this->render_featured_checkbox($post->ID);
 
@@ -311,6 +320,11 @@ final class RunPartner_Events_CPT {
 
             if ($key === 'distances') {
                 $this->save_distances($post_id);
+                continue;
+            }
+
+            if ($key === 'editions') {
+                $this->save_editions($post_id);
                 continue;
             }
 
@@ -351,7 +365,8 @@ final class RunPartner_Events_CPT {
     private function sanitize_meta_value(string $key, mixed $value): mixed {
         return match ($key) {
             'website', 'registration'   => esc_url_raw($value),
-            'year', 'past_edition'      => absint($value),
+            'year'                      => absint($value),
+            'editions'                  => $value,
             'featured'                  => absint($value),
             'distances'                 => $value,
             'history'                   => sanitize_textarea_field($value),
@@ -520,11 +535,17 @@ final class RunPartner_Events_CPT {
                 'description' => 'Event history narrative',
                 'default'     => '',
             ],
-            'past_edition' => [
-                'type'        => 'integer',
-                'description' => 'Past edition post ID',
-                'minimum'     => 0,
-                'default'     => 0,
+            'editions' => [
+                'type'        => 'array',
+                'description' => 'Past edition reports (year + text)',
+                'items'       => [
+                    'type'       => 'object',
+                    'properties' => [
+                        'year'   => ['type' => 'string'],
+                        'report' => ['type' => 'string'],
+                    ],
+                ],
+                'default'     => [],
             ],
             'featured' => [
                 'type'        => 'boolean',
@@ -638,33 +659,99 @@ final class RunPartner_Events_CPT {
         <?php
     }
 
-    private function render_past_edition_dropdown(int $post_id): void {
-        $meta_key   = self::META_FIELDS['past_edition'];
-        $saved      = (int) get_post_meta($post_id, $meta_key, true);
-        $editions   = get_posts([
-            'post_type'      => self::POST_TYPE,
-            'post_status'    => 'publish',
-            'posts_per_page' => -1,
-            'post__not_in'   => [$post_id],
-            'orderby'        => 'title',
-            'order'          => 'ASC',
-        ]);
+    private function render_editions_field(int $post_id): void {
+        $meta_key = self::META_FIELDS['editions'];
+        $editions = get_post_meta($post_id, $meta_key, true);
+        $editions = is_array($editions) ? $editions : [];
         ?>
-        <p>
-            <label for="<?php echo esc_attr($meta_key); ?>"><?php esc_html_e('Past Edition', 'runpartner'); ?></label>
-            <select
-                id="<?php echo esc_attr($meta_key); ?>"
-                name="<?php echo esc_attr($meta_key); ?>"
-                class="regular-text"
-            >
-                <option value=""><?php esc_html_e('None', 'runpartner'); ?></option>
-                <?php foreach ($editions as $edition) : ?>
-                    <option value="<?php echo esc_attr($edition->ID); ?>" <?php selected($saved, $edition->ID); ?>>
-                        <?php echo esc_html(get_the_title($edition->ID)); ?>
-                    </option>
+        <fieldset>
+            <legend><?php esc_html_e('Past Editions (yearly reports)', 'runpartner'); ?></legend>
+            <div id="rp-editions-wrapper">
+                <?php foreach ($editions as $index => $entry) : ?>
+                    <div class="rp-edition-row">
+                        <p>
+                            <label>
+                                <?php esc_html_e('Year', 'runpartner'); ?>
+                                <input
+                                    type="text"
+                                    name="<?php echo esc_attr($meta_key); ?>[<?php echo (int) $index; ?>][year]"
+                                    value="<?php echo esc_attr($entry['year'] ?? ''); ?>"
+                                    class="regular-text"
+                                    placeholder="<?php esc_attr_e('e.g., 2025', 'runpartner'); ?>"
+                                />
+                            </label>
+                        </p>
+                        <p>
+                            <label>
+                                <?php esc_html_e('Report', 'runpartner'); ?>
+                                <textarea
+                                    name="<?php echo esc_attr($meta_key); ?>[<?php echo (int) $index; ?>][report]"
+                                    class="large-text"
+                                    rows="4"
+                                ><?php echo esc_textarea($entry['report'] ?? ''); ?></textarea>
+                            </label>
+                        </p>
+                        <p>
+                            <label>
+                                <input type="checkbox"
+                                    name="<?php echo esc_attr($meta_key); ?>[<?php echo (int) $index; ?>][remove]"
+                                    value="1"
+                                />
+                                <?php esc_html_e('Remove this edition', 'runpartner'); ?>
+                            </label>
+                        </p>
+                        <hr />
+                    </div>
                 <?php endforeach; ?>
-            </select>
-        </p>
+            </div>
+            <button type="button" id="rp-add-edition" class="button">
+                <?php esc_html_e('Add Edition', 'runpartner'); ?>
+            </button>
+        </fieldset>
+        <script>
+        document.getElementById('rp-add-edition')?.addEventListener('click', function() {
+            const wrapper = document.getElementById('rp-editions-wrapper');
+            if (!wrapper) return;
+            const count = wrapper.querySelectorAll('.rp-edition-row').length;
+            const html = [
+                '<div class="rp-edition-row">',
+                '<p><label><?php echo esc_js(__('Year', 'runpartner')); ?> <input type="text" name="<?php echo esc_js($meta_key); ?>[' + count + '][year]" class="regular-text" placeholder="<?php echo esc_js(__('e.g., 2025', 'runpartner')); ?>" /></label></p>',
+                '<p><label><?php echo esc_js(__('Report', 'runpartner')); ?> <textarea name="<?php echo esc_js($meta_key); ?>[' + count + '][report]" class="large-text" rows="4"></textarea></label></p>',
+                '<p><label><input type="checkbox" name="<?php echo esc_js($meta_key); ?>[' + count + '][remove]" value="1" /> <?php echo esc_js(__('Remove this edition', 'runpartner')); ?></label></p>',
+                '<hr /></div>'
+            ].join('');
+            wrapper.insertAdjacentHTML('beforeend', html);
+        });
+        </script>
         <?php
+    }
+
+    private function save_editions(int $post_id): void {
+        $meta_key = self::META_FIELDS['editions'];
+
+        if (!isset($_POST[$meta_key]) || !is_array($_POST[$meta_key])) {
+            delete_post_meta($post_id, $meta_key);
+            return;
+        }
+
+        $editions = [];
+        foreach ($_POST[$meta_key] as $entry) {
+            if (isset($entry['remove']) && $entry['remove']) {
+                continue;
+            }
+            if (empty($entry['year'])) {
+                continue;
+            }
+            $editions[] = [
+                'year'   => sanitize_text_field(wp_unslash($entry['year'])),
+                'report' => isset($entry['report']) ? sanitize_textarea_field(wp_unslash($entry['report'])) : '',
+            ];
+        }
+
+        if (empty($editions)) {
+            delete_post_meta($post_id, $meta_key);
+        } else {
+            update_post_meta($post_id, $meta_key, $editions);
+        }
     }
 }
