@@ -12,6 +12,7 @@ if (!defined('ABSPATH')) {
 final class RunPartner_Events_CPT {
     private const POST_TYPE = 'events';
     private const TAXONOMY  = 'event_type';
+    private const EVENT_REGION_TAXONOMY = 'event_region';
 
     private const META_FIELDS = [
         'subtitle'           => '_rp_event_subtitle',
@@ -54,6 +55,8 @@ final class RunPartner_Events_CPT {
     public function __construct() {
         add_action('init', [$this, 'register_post_type']);
         add_action('init', [$this, 'register_taxonomy']);
+        add_action('init', [$this, 'register_event_region_taxonomy']);
+        add_action('init', [$this, 'seed_event_regions']);
         add_action('rest_api_init', [$this, 'register_meta']);
         add_action('rest_api_init', [$this, 'register_rest_event_fields']);
         add_action('add_meta_boxes', [$this, 'add_meta_box']);
@@ -100,6 +103,169 @@ final class RunPartner_Events_CPT {
                 'menu_name'         => __('Event Types', 'runpartner'),
             ],
         ]);
+    }
+
+    public function register_event_region_taxonomy(): void {
+        register_taxonomy(self::EVENT_REGION_TAXONOMY, self::POST_TYPE, [
+            'hierarchical'      => true,
+            'public'            => true,
+            'show_in_rest'      => true,
+            'rest_base'         => 'event_regions',
+            'rest_namespace'    => 'wp/v2',
+            'show_admin_column' => true,
+            'labels'            => [
+                'name'              => _x('Event Regions', 'taxonomy general name', 'runpartner'),
+                'singular_name'     => _x('Event Region', 'taxonomy singular name', 'runpartner'),
+                'search_items'      => __('Search Event Regions', 'runpartner'),
+                'all_items'         => __('All Event Regions', 'runpartner'),
+                'parent_item'       => __('Parent Region', 'runpartner'),
+                'parent_item_colon' => __('Parent Region:', 'runpartner'),
+                'edit_item'         => __('Edit Region', 'runpartner'),
+                'update_item'       => __('Update Region', 'runpartner'),
+                'add_new_item'      => __('Add New Region', 'runpartner'),
+                'new_item_name'     => __('New Region Name', 'runpartner'),
+                'menu_name'         => __('Regions', 'runpartner'),
+            ],
+        ]);
+    }
+
+    public function seed_event_regions(): void {
+        if (wp_count_terms(self::EVENT_REGION_TAXONOMY) > 0) {
+            return;
+        }
+
+        $regions = [
+            'india' => [
+                'name'     => 'India',
+                'children' => [
+                    'andhra-pradesh'      => 'Andhra Pradesh',
+                    'arunachal-pradesh'   => 'Arunachal Pradesh',
+                    'assam'               => 'Assam',
+                    'bihar'               => 'Bihar',
+                    'chhattisgarh'        => 'Chhattisgarh',
+                    'goa'                 => 'Goa',
+                    'gujarat'             => 'Gujarat',
+                    'haryana'             => 'Haryana',
+                    'himachal-pradesh'    => 'Himachal Pradesh',
+                    'jharkhand'           => 'Jharkhand',
+                    'karnataka'           => 'Karnataka',
+                    'kerala'              => 'Kerala',
+                    'madhya-pradesh'      => 'Madhya Pradesh',
+                    'maharashtra'         => 'Maharashtra',
+                    'manipur'             => 'Manipur',
+                    'meghalaya'           => 'Meghalaya',
+                    'mizoram'             => 'Mizoram',
+                    'nagaland'            => 'Nagaland',
+                    'odisha'              => 'Odisha',
+                    'punjab'              => 'Punjab',
+                    'rajasthan'           => 'Rajasthan',
+                    'sikkim'              => 'Sikkim',
+                    'tamil-nadu'          => 'Tamil Nadu',
+                    'telangana'           => 'Telangana',
+                    'tripura'             => 'Tripura',
+                    'uttar-pradesh'       => 'Uttar Pradesh',
+                    'uttarakhand'         => 'Uttarakhand',
+                    'west-bengal'         => 'West Bengal',
+                    'andaman-nicobar'           => 'Andaman & Nicobar',
+                    'chandigarh'                => 'Chandigarh',
+                    'dadra-nagar-haveli-daman-diu' => 'Dadra & Nagar Haveli and Daman & Diu',
+                    'delhi'                     => 'Delhi',
+                    'jammu-kashmir'             => 'Jammu & Kashmir',
+                    'ladakh'                    => 'Ladakh',
+                    'lakshadweep'               => 'Lakshadweep',
+                    'puducherry'                => 'Puducherry',
+                ],
+            ],
+            'american-continent' => [
+                'name'     => 'American Continent',
+                'children' => [
+                    'united-states'  => 'United States',
+                    'canada'         => 'Canada',
+                    'mexico'         => 'Mexico',
+                    'brazil'         => 'Brazil',
+                    'argentina'      => 'Argentina',
+                    'colombia'       => 'Colombia',
+                    'chile'          => 'Chile',
+                    'peru'           => 'Peru',
+                    'costa-rica'     => 'Costa Rica',
+                ],
+            ],
+            'europe' => [
+                'name'     => 'Europe',
+                'children' => [
+                    'united-kingdom' => 'United Kingdom',
+                    'france'         => 'France',
+                    'germany'        => 'Germany',
+                    'spain'          => 'Spain',
+                    'italy'          => 'Italy',
+                    'netherlands'    => 'Netherlands',
+                    'switzerland'    => 'Switzerland',
+                    'sweden'         => 'Sweden',
+                    'norway'         => 'Norway',
+                    'denmark'        => 'Denmark',
+                    'belgium'        => 'Belgium',
+                    'ireland'        => 'Ireland',
+                    'portugal'       => 'Portugal',
+                    'austria'        => 'Austria',
+                    'poland'         => 'Poland',
+                    'czech-republic' => 'Czech Republic',
+                    'greece'         => 'Greece',
+                ],
+            ],
+            'africa-continent' => [
+                'name'     => 'Africa Continent',
+                'children' => [
+                    'kenya'          => 'Kenya',
+                    'ethiopia'       => 'Ethiopia',
+                    'south-africa'   => 'South Africa',
+                    'uganda'         => 'Uganda',
+                    'morocco'        => 'Morocco',
+                    'nigeria'        => 'Nigeria',
+                    'tanzania'       => 'Tanzania',
+                    'ghana'          => 'Ghana',
+                ],
+            ],
+            'asia' => [
+                'name'     => 'Asia',
+                'children' => [
+                    'japan'          => 'Japan',
+                    'china'          => 'China',
+                    'uae'            => 'UAE',
+                    'singapore'      => 'Singapore',
+                    'thailand'       => 'Thailand',
+                    'south-korea'    => 'South Korea',
+                    'malaysia'       => 'Malaysia',
+                    'vietnam'        => 'Vietnam',
+                    'philippines'    => 'Philippines',
+                    'indonesia'      => 'Indonesia',
+                    'taiwan'         => 'Taiwan',
+                    'hong-kong'      => 'Hong Kong',
+                    'qatar'          => 'Qatar',
+                    'bahrain'        => 'Bahrain',
+                    'israel'         => 'Israel',
+                    'turkey'         => 'Turkey',
+                    'sri-lanka'      => 'Sri Lanka',
+                    'nepal'          => 'Nepal',
+                ],
+            ],
+        ];
+
+        foreach ($regions as $parent_slug => $region) {
+            $parent_id = wp_insert_term($region['name'], self::EVENT_REGION_TAXONOMY, ['slug' => $parent_slug]);
+
+            if (is_wp_error($parent_id) || empty($region['children'])) {
+                continue;
+            }
+
+            $parent_id = (int) $parent_id['term_id'];
+
+            foreach ($region['children'] as $child_slug => $child_name) {
+                wp_insert_term($child_name, self::EVENT_REGION_TAXONOMY, [
+                    'slug'   => $child_slug,
+                    'parent' => $parent_id,
+                ]);
+            }
+        }
     }
 
     public function register_meta(): void {
