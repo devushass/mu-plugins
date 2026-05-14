@@ -27,6 +27,7 @@ final class RunPartner_Events_CPT {
         'records'            => '_rp_event_records',
         'categories'         => '_rp_event_categories',
         'history'            => '_rp_event_history',
+        'course_overview'    => '_rp_event_course_overview',
         'editions'           => '_rp_event_editions',
         'featured'           => '_rp_event_featured',
     ];
@@ -480,6 +481,11 @@ final class RunPartner_Events_CPT {
             'type'  => 'textarea',
         ]);
 
+        $this->render_field($post->ID, 'course_overview', [
+            'label' => __('Course Overview', 'runpartner'),
+            'type'  => 'textarea',
+        ]);
+
         $this->render_editions_field($post->ID);
 
         $this->render_featured_checkbox($post->ID);
@@ -746,6 +752,11 @@ final class RunPartner_Events_CPT {
             'history' => [
                 'type'        => 'string',
                 'description' => 'Event history narrative',
+                'default'     => '',
+            ],
+            'course_overview' => [
+                'type'        => 'string',
+                'description' => 'Short description of the race course (terrain, elevation, route type)',
                 'default'     => '',
             ],
             'editions' => [
