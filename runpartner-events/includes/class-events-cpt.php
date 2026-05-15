@@ -131,10 +131,6 @@ final class RunPartner_Events_CPT {
     }
 
     public function seed_event_regions(): void {
-        if (wp_count_terms(self::EVENT_REGION_TAXONOMY) > 0) {
-            return;
-        }
-
         $regions = [
             'india' => [
                 'name'     => 'India',
@@ -249,18 +245,41 @@ final class RunPartner_Events_CPT {
                     'nepal'          => 'Nepal',
                 ],
             ],
+            'oceania' => [
+                'name'     => 'Oceania',
+                'children' => [
+                    'australia'          => 'Australia',
+                    'new-zealand'        => 'New Zealand',
+                    'fiji'               => 'Fiji',
+                    'papua-new-guinea'   => 'Papua New Guinea',
+                    'samoa'              => 'Samoa',
+                    'tonga'              => 'Tonga',
+                ],
+            ],
         ];
 
         foreach ($regions as $parent_slug => $region) {
-            $parent_id = wp_insert_term($region['name'], self::EVENT_REGION_TAXONOMY, ['slug' => $parent_slug]);
+            $existing_parent = get_term_by('slug', $parent_slug, self::EVENT_REGION_TAXONOMY);
 
-            if (is_wp_error($parent_id) || empty($region['children'])) {
-                continue;
+            if ($existing_parent) {
+                $parent_id = (int) $existing_parent->term_id;
+            } else {
+                $result = wp_insert_term($region['name'], self::EVENT_REGION_TAXONOMY, ['slug' => $parent_slug]);
+
+                if (is_wp_error($result) || empty($region['children'])) {
+                    continue;
+                }
+
+                $parent_id = (int) $result['term_id'];
             }
 
-            $parent_id = (int) $parent_id['term_id'];
-
             foreach ($region['children'] as $child_slug => $child_name) {
+                $existing_child = get_term_by('slug', $child_slug, self::EVENT_REGION_TAXONOMY);
+
+                if ($existing_child) {
+                    continue;
+                }
+
                 wp_insert_term($child_name, self::EVENT_REGION_TAXONOMY, [
                     'slug'   => $child_slug,
                     'parent' => $parent_id,
