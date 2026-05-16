@@ -30,6 +30,7 @@ final class RunPartner_Events_CPT {
         'course_overview'    => '_rp_event_course_overview',
         'editions'           => '_rp_event_editions',
         'featured'           => '_rp_event_featured',
+        'famous_athletes'    => '_rp_event_famous_athletes',
     ];
 
     private const ALLOWED_DISTANCES = [
@@ -326,6 +327,8 @@ final class RunPartner_Events_CPT {
                         $value = is_array($value) ? $value : [];
                     } elseif ($field_key === 'categories') {
                         $value = is_array($value) ? $value : [];
+                    } elseif ($field_key === 'famous_athletes') {
+                        $value = is_array($value) ? $value : [];
                     } else {
                         $value = $value !== '' ? $value : '';
                     }
@@ -427,6 +430,17 @@ final class RunPartner_Events_CPT {
                     ],
                 ],
                 'featured'            => ['type' => 'boolean'],
+                'famous_athletes'      => [
+                    'type'  => 'array',
+                    'items' => [
+                        'type'       => 'object',
+                        'properties' => [
+                            'athlete_id'  => ['type' => 'integer'],
+                            'performance' => ['type' => 'string'],
+                            'year'        => ['type' => 'string'],
+                        ],
+                    ],
+                ],
             ],
         ];
     }
@@ -507,6 +521,8 @@ final class RunPartner_Events_CPT {
 
         $this->render_editions_field($post->ID);
 
+        $this->render_famous_athletes_field($post->ID);
+
         $this->render_featured_checkbox($post->ID);
 
         echo '</div>';
@@ -547,6 +563,11 @@ final class RunPartner_Events_CPT {
 
             if ($key === 'categories') {
                 $this->save_categories($post_id);
+                continue;
+            }
+
+            if ($key === 'famous_athletes') {
+                $this->save_famous_athletes($post_id);
                 continue;
             }
 
@@ -591,6 +612,7 @@ final class RunPartner_Events_CPT {
             'editions'                  => $value,
             'records'                   => $value,
             'categories'                => $value,
+            'famous_athletes'           => $this->sanitize_famous_athletes($value),
             'featured'                  => absint($value),
             'distances'                 => $value,
             'history'                   => sanitize_textarea_field($value),
@@ -794,6 +816,19 @@ final class RunPartner_Events_CPT {
                 'type'        => 'boolean',
                 'description' => 'Mark as featured event',
                 'default'     => false,
+            ],
+            'famous_athletes' => [
+                'type'        => 'array',
+                'description' => 'Famous athletes associated with this event',
+                'items'       => [
+                    'type'       => 'object',
+                    'properties' => [
+                        'athlete_id'  => ['type' => 'integer'],
+                        'performance' => ['type' => 'string'],
+                        'year'        => ['type' => 'string'],
+                    ],
+                ],
+                'default'     => [],
             ],
         ];
     }
@@ -1162,5 +1197,150 @@ final class RunPartner_Events_CPT {
         } else {
             update_post_meta($post_id, $meta_key, $editions);
         }
+    }
+
+    private function render_famous_athletes_field(int $post_id): void {
+        $meta_key = self::META_FIELDS['famous_athletes'];
+        $athletes = get_post_meta($post_id, $meta_key, true);
+        $athletes = is_array($athletes) ? $athletes : [];
+
+        $all_athletes = get_posts([
+            'post_type'      => 'athlete',
+            'posts_per_page' => -1,
+            'orderby'        => 'title',
+            'order'          => 'ASC',
+            'post_status'    => 'publish',
+        ]);
+        ?>
+        <fieldset>
+            <legend><?php esc_html_e('Famous Athletes', 'runpartner'); ?></legend>
+            <p class="description"><?php esc_html_e('Associate famous athletes with this event and describe their remarkable performance.', 'runpartner'); ?></p>
+            <div id="rp-famous-athletes-wrapper">
+                <?php foreach ($athletes as $index => $entry) : ?>
+                    <div class="rp-famous-athlete-row">
+                        <p>
+                            <label><?php esc_html_e('Athlete', 'runpartner'); ?>
+                                <select name="<?php echo esc_attr($meta_key); ?>[<?php echo (int) $index; ?>][athlete_id]" class="regular-text">
+                                    <option value=""><?php esc_html_e('— Select Athlete —', 'runpartner'); ?></option>
+                                    <?php foreach ($all_athletes as $a) : ?>
+                                        <option value="<?php echo esc_attr($a->ID); ?>" <?php selected($entry['athlete_id'] ?? 0, $a->ID); ?>>
+                                            <?php echo esc_html(get_the_title($a)); ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </label>
+                        </p>
+                        <p>
+                            <label><?php esc_html_e('Performance', 'runpartner'); ?>
+                                <input
+                                    type="text"
+                                    name="<?php echo esc_attr($meta_key); ?>[<?php echo (int) $index; ?>][performance]"
+                                    value="<?php echo esc_attr($entry['performance'] ?? ''); ?>"
+                                    class="regular-text"
+                                    placeholder="<?php esc_attr_e('e.g., Won gold in marathon with OR', 'runpartner'); ?>"
+                                />
+                            </label>
+                        </p>
+                        <p>
+                            <label>
+                                <?php esc_html_e('Year', 'runpartner'); ?>
+                                <input
+                                    type="text"
+                                    name="<?php echo esc_attr($meta_key); ?>[<?php echo (int) $index; ?>][year]"
+                                    value="<?php echo esc_attr($entry['year'] ?? ''); ?>"
+                                    class="small-text"
+                                    placeholder="<?php esc_attr_e('e.g., 2023', 'runpartner'); ?>"
+                                />
+                            </label>
+                            <label style="margin-left:12px;">
+                                <input type="checkbox" name="<?php echo esc_attr($meta_key); ?>[<?php echo (int) $index; ?>][remove]" value="1" />
+                                <?php esc_html_e('Remove', 'runpartner'); ?>
+                            </label>
+                        </p>
+                        <hr />
+                    </div>
+                <?php endforeach; ?>
+            </div>
+            <button type="button" id="rp-add-famous-athlete" class="button">
+                <?php esc_html_e('Add Famous Athlete', 'runpartner'); ?>
+            </button>
+        </fieldset>
+        <script>
+        document.getElementById('rp-add-famous-athlete')?.addEventListener('click', function() {
+            const wrapper = document.getElementById('rp-famous-athletes-wrapper');
+            if (!wrapper) return;
+            const count = wrapper.querySelectorAll('.rp-famous-athlete-row').length;
+            const athleteOptions = <?php echo json_encode(array_map(fn($a) => ['id' => $a->ID, 'title' => get_the_title($a)], $all_athletes)); ?>;
+            let optionsHtml = '<option value=""><?php echo esc_js(__('— Select Athlete —', 'runpartner')); ?></option>';
+            athleteOptions.forEach(function(a) {
+                optionsHtml += '<option value="' + a.id + '">' + a.title.replace(/'/g, '&#039;') + '</option>';
+            });
+            const html = [
+                '<div class="rp-famous-athlete-row">',
+                '<p><label><?php echo esc_js(__('Athlete', 'runpartner')); ?> <select name="<?php echo esc_js($meta_key); ?>[' + count + '][athlete_id]" class="regular-text">' + optionsHtml + '</select></label></p>',
+                '<p><label><?php echo esc_js(__('Performance', 'runpartner')); ?> <input type="text" name="<?php echo esc_js($meta_key); ?>[' + count + '][performance]" class="regular-text" placeholder="<?php echo esc_js(__('e.g., Won gold in marathon with OR', 'runpartner')); ?>" /></label></p>',
+                '<p><label><?php echo esc_js(__('Year', 'runpartner')); ?> <input type="text" name="<?php echo esc_js($meta_key); ?>[' + count + '][year]" class="small-text" placeholder="<?php echo esc_js(__('e.g., 2023', 'runpartner')); ?>" /></label>',
+                '<label style="margin-left:12px;"><input type="checkbox" name="<?php echo esc_js($meta_key); ?>[' + count + '][remove]" value="1" /> <?php echo esc_js(__('Remove', 'runpartner')); ?></label></p>',
+                '<hr /></div>'
+            ].join('');
+            wrapper.insertAdjacentHTML('beforeend', html);
+        });
+        </script>
+        <?php
+    }
+
+    private function save_famous_athletes(int $post_id): void {
+        $meta_key = self::META_FIELDS['famous_athletes'];
+
+        if (!isset($_POST[$meta_key]) || !is_array($_POST[$meta_key])) {
+            delete_post_meta($post_id, $meta_key);
+            return;
+        }
+
+        $athletes = [];
+        foreach ($_POST[$meta_key] as $entry) {
+            if (isset($entry['remove']) && $entry['remove']) {
+                continue;
+            }
+            $athlete_id = isset($entry['athlete_id']) ? absint($entry['athlete_id']) : 0;
+            if ($athlete_id <= 0) {
+                continue;
+            }
+            $athletes[] = [
+                'athlete_id'  => $athlete_id,
+                'performance' => isset($entry['performance']) ? sanitize_text_field(wp_unslash($entry['performance'])) : '',
+                'year'        => isset($entry['year']) ? sanitize_text_field(wp_unslash($entry['year'])) : '',
+            ];
+        }
+
+        if (empty($athletes)) {
+            delete_post_meta($post_id, $meta_key);
+        } else {
+            update_post_meta($post_id, $meta_key, $athletes);
+        }
+    }
+
+    private function sanitize_famous_athletes(mixed $value): array {
+        if (!is_array($value)) {
+            return [];
+        }
+
+        $result = [];
+        foreach ($value as $entry) {
+            if (!is_array($entry)) {
+                continue;
+            }
+            $athlete_id = isset($entry['athlete_id']) ? absint($entry['athlete_id']) : 0;
+            if ($athlete_id <= 0) {
+                continue;
+            }
+            $result[] = [
+                'athlete_id'  => $athlete_id,
+                'performance' => isset($entry['performance']) ? sanitize_text_field($entry['performance']) : '',
+                'year'        => isset($entry['year']) ? sanitize_text_field($entry['year']) : '',
+            ];
+        }
+
+        return $result;
     }
 }
