@@ -34,9 +34,11 @@ final class RunPartner_Events_CPT {
     ];
 
     private const ALLOWED_DISTANCES = [
+        'Fun Run',
         '5K',
         '10K',
         'Half Marathon',
+        '20-miler',
         'Marathon',
         '50K',
         '100K',
