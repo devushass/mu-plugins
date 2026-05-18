@@ -24,6 +24,7 @@ final class RunPartner_Events_CPT {
         'year'               => '_rp_event_year',
         'distances'          => '_rp_event_distances',
         'date'               => '_rp_event_date',
+        'date_end'           => '_rp_event_date_end',
         'records'            => '_rp_event_records',
         'categories'         => '_rp_event_categories',
         'history'            => '_rp_event_history',
@@ -44,16 +45,6 @@ final class RunPartner_Events_CPT {
         '100K',
         'Ultra',
         '100-miler',
-    ];
-
-    private const ALLOWED_CATEGORIES = [
-        'men',
-        'women',
-        'wheelchair',
-        'Masters 40+',
-        'Masters 50+',
-        'mixed',
-        'open',
     ];
 
     public function __construct() {
@@ -327,6 +318,16 @@ final class RunPartner_Events_CPT {
                         $value = (bool) $value;
                     } elseif ($field_key === 'records') {
                         $value = is_array($value) ? $value : [];
+                        $value = array_map(function ($record) {
+                            if (!isset($record['gender']) && isset($record['category'])) {
+                                $record['gender'] = $record['category'];
+                            }
+                            if (!isset($record['event_name']) && isset($record['distance'])) {
+                                $record['event_name'] = $record['distance'];
+                            }
+                            unset($record['category'], $record['distance']);
+                            return $record;
+                        }, $value);
                     } elseif ($field_key === 'categories') {
                         $value = is_array($value) ? $value : [];
                     } elseif ($field_key === 'famous_athletes') {
@@ -375,15 +376,13 @@ final class RunPartner_Events_CPT {
             return;
         }
 
-        $distances = array_map('sanitize_text_field', $input);
-        $distances = array_values(array_intersect($distances, self::ALLOWED_DISTANCES));
+        $distances = array_values(array_unique(array_map('sanitize_text_field', $input)));
 
         if (empty($distances)) {
             delete_post_meta($post_id, self::META_FIELDS['distances']);
-            return;
+        } else {
+            update_post_meta($post_id, self::META_FIELDS['distances'], $distances);
         }
-
-        update_post_meta($post_id, self::META_FIELDS['distances'], $distances);
     }
 
     private function get_rest_event_schema(): array {
@@ -399,16 +398,17 @@ final class RunPartner_Events_CPT {
                 'year'         => ['type' => 'integer', 'minimum' => 1900, 'maximum' => (int) date('Y') + 5],
                 'distances'    => [
                     'type'  => 'array',
-                    'items' => ['type' => 'string', 'enum' => self::ALLOWED_DISTANCES],
+                    'items' => ['type' => 'string'],
                 ],
                 'date'       => ['type' => 'string', 'format' => 'date'],
+                'date_end'   => ['type' => 'string', 'format' => 'date'],
                 'records'    => [
                     'type'  => 'array',
                     'items' => [
                         'type'       => 'object',
                         'properties' => [
-                            'category'    => ['type' => 'string'],
-                            'distance'    => ['type' => 'string'],
+                            'gender'      => ['type' => 'string'],
+                            'event_name'  => ['type' => 'string'],
                             'time'        => ['type' => 'string'],
                             'holder'      => ['type' => 'string'],
                             'nationality' => ['type' => 'string'],
@@ -503,12 +503,8 @@ final class RunPartner_Events_CPT {
 
         $this->render_distance_checkboxes($post->ID);
 
-        $this->render_field($post->ID, 'date', [
-            'label'       => __('Event Date', 'runpartner'),
-            'type'        => 'date',
-        ]);
+        $this->render_date_range($post->ID);
 
-        $this->render_category_checkboxes($post->ID);
         $this->render_records_repeater($post->ID);
 
         $this->render_field($post->ID, 'history', [
@@ -563,11 +559,6 @@ final class RunPartner_Events_CPT {
                 continue;
             }
 
-            if ($key === 'categories') {
-                $this->save_categories($post_id);
-                continue;
-            }
-
             if ($key === 'famous_athletes') {
                 $this->save_famous_athletes($post_id);
                 continue;
@@ -591,20 +582,30 @@ final class RunPartner_Events_CPT {
     private function save_distances(int $post_id): void {
         $field_name = self::META_FIELDS['distances'];
 
-        if (empty($_POST[$field_name]) || !is_array($_POST[$field_name])) {
-            delete_post_meta($post_id, $field_name);
-            return;
+        $standard = [];
+        if (!empty($_POST[$field_name]) && is_array($_POST[$field_name])) {
+            $standard = array_map('sanitize_text_field', array_map('wp_unslash', $_POST[$field_name]));
+            $standard = array_values(array_intersect($standard, self::ALLOWED_DISTANCES));
         }
 
-        $distances = array_map('sanitize_text_field', array_map('wp_unslash', $_POST[$field_name]));
-        $distances = array_values(array_intersect($distances, self::ALLOWED_DISTANCES));
+        $custom = [];
+        if (!empty($_POST['rp_custom_distances'])) {
+            $lines = explode("\n", wp_unslash($_POST['rp_custom_distances']));
+            foreach ($lines as $line) {
+                $line = trim(sanitize_text_field($line));
+                if ($line !== '') {
+                    $custom[] = $line;
+                }
+            }
+        }
+
+        $distances = array_values(array_unique(array_merge($standard, $custom)));
 
         if (empty($distances)) {
             delete_post_meta($post_id, $field_name);
-            return;
+        } else {
+            update_post_meta($post_id, $field_name, $distances);
         }
-
-        update_post_meta($post_id, $field_name, $distances);
     }
 
     private function sanitize_meta_value(string $key, mixed $value): mixed {
@@ -636,7 +637,6 @@ final class RunPartner_Events_CPT {
         $query_params['distance'] = [
             'description' => __('Filter by distance type', 'runpartner'),
             'type'        => 'string',
-            'enum'        => self::ALLOWED_DISTANCES,
         ];
 
         $query_params['year'] = [
@@ -755,27 +755,32 @@ final class RunPartner_Events_CPT {
             ],
             'distances' => [
                 'type'        => 'array',
-                'description' => 'Available race distances',
+                'description' => 'Available race distances (standard + custom)',
                 'items'       => [
                     'type' => 'string',
-                    'enum' => self::ALLOWED_DISTANCES,
                 ],
                 'default'     => [],
             ],
             'date' => [
                 'type'        => 'string',
                 'format'      => 'date',
-                'description' => 'Event date (YYYY-MM-DD)',
+                'description' => 'Event start date (YYYY-MM-DD)',
+                'default'     => '',
+            ],
+            'date_end' => [
+                'type'        => 'string',
+                'format'      => 'date',
+                'description' => 'Event end date (YYYY-MM-DD) — optional, for multi-day events',
                 'default'     => '',
             ],
             'records' => [
                 'type'        => 'array',
-                'description' => 'Course records per category',
+                'description' => 'Course records per gender and event',
                 'items'       => [
                     'type'       => 'object',
                     'properties' => [
-                        'category'    => ['type' => 'string'],
-                        'distance'    => ['type' => 'string'],
+                        'gender'      => ['type' => 'string'],
+                        'event_name'  => ['type' => 'string'],
                         'time'        => ['type' => 'string'],
                         'holder'      => ['type' => 'string'],
                         'nationality' => ['type' => 'string'],
@@ -901,6 +906,10 @@ final class RunPartner_Events_CPT {
         $meta_key = self::META_FIELDS['distances'];
         $saved    = get_post_meta($post_id, $meta_key, true);
         $selected = is_array($saved) ? $saved : ($saved ? explode(',', $saved) : []);
+
+        $standard = array_intersect($selected, self::ALLOWED_DISTANCES);
+        $custom   = array_values(array_diff($selected, self::ALLOWED_DISTANCES));
+        $custom_text = implode("\n", $custom);
         ?>
         <fieldset>
             <legend><?php esc_html_e('Distance Types', 'runpartner'); ?></legend>
@@ -911,12 +920,24 @@ final class RunPartner_Events_CPT {
                             type="checkbox"
                             name="<?php echo esc_attr($meta_key); ?>[]"
                             value="<?php echo esc_attr($distance); ?>"
-                            <?php checked(in_array($distance, $selected, true)); ?>
+                            <?php checked(in_array($distance, $standard, true)); ?>
                         />
                         <?php echo esc_html($distance); ?>
                     </label>
                 <?php endforeach; ?>
             </div>
+            <p>
+                <label for="rp-custom-distances">
+                    <?php esc_html_e('Other distances (one per line)', 'runpartner'); ?>
+                </label>
+                <textarea
+                    id="rp-custom-distances"
+                    name="rp_custom_distances"
+                    class="large-text"
+                    rows="4"
+                    placeholder="<?php esc_attr_e('e.g. Kharduungla Marathon&#10;Silk Route Ultra - 122km&#10;11.2km', 'runpartner'); ?>"
+                ><?php echo esc_textarea($custom_text); ?></textarea>
+            </p>
         </fieldset>
         <?php
     }
@@ -939,81 +960,67 @@ final class RunPartner_Events_CPT {
         <?php
     }
 
-    public function get_allowed_categories(): array {
-        return apply_filters('rp_event_categories', self::ALLOWED_CATEGORIES);
-    }
-
-    private function render_category_checkboxes(int $post_id): void {
-        $meta_key = self::META_FIELDS['categories'];
-        $saved    = get_post_meta($post_id, $meta_key, true);
-        $selected = is_array($saved) ? $saved : ['men', 'women'];
-        $categories = $this->get_allowed_categories();
+    private function render_date_range(int $post_id): void {
+        $start_key = self::META_FIELDS['date'];
+        $end_key   = self::META_FIELDS['date_end'];
+        $start_val = get_post_meta($post_id, $start_key, true);
+        $end_val   = get_post_meta($post_id, $end_key, true);
         ?>
-        <fieldset>
-            <legend><?php esc_html_e('Record Categories', 'runpartner'); ?></legend>
-            <p class="description"><?php esc_html_e('Check categories to enable course record entries for this event.', 'runpartner'); ?></p>
-            <div class="rp-checkboxes-row">
-                <?php foreach ($categories as $cat) : ?>
-                    <label class="rp-checkbox-label">
-                        <input
-                            type="checkbox"
-                            name="<?php echo esc_attr($meta_key); ?>[]"
-                            value="<?php echo esc_attr($cat); ?>"
-                            <?php checked(in_array($cat, $selected, true)); ?>
-                        />
-                        <?php echo esc_html(ucfirst($cat)); ?>
-                    </label>
-                <?php endforeach; ?>
-            </div>
-        </fieldset>
+        <p style="display: flex; gap: 16px; align-items: flex-end;">
+            <span style="flex: 1;">
+                <label for="<?php echo esc_attr($start_key); ?>"><?php esc_html_e('Start Date', 'runpartner'); ?></label><br>
+                <input type="date" id="<?php echo esc_attr($start_key); ?>" name="<?php echo esc_attr($start_key); ?>" value="<?php echo esc_attr($start_val); ?>" />
+            </span>
+            <span style="flex: 1;">
+                <label for="<?php echo esc_attr($end_key); ?>"><?php esc_html_e('End Date', 'runpartner'); ?></label><br>
+                <input type="date" id="<?php echo esc_attr($end_key); ?>" name="<?php echo esc_attr($end_key); ?>" value="<?php echo esc_attr($end_val); ?>" />
+            </span>
+        </p>
         <?php
     }
 
     private function render_records_repeater(int $post_id): void {
-        $records_key   = self::META_FIELDS['records'];
-        $categories_key = self::META_FIELDS['categories'];
-        $all_records   = get_post_meta($post_id, $records_key, true);
-        $all_records   = is_array($all_records) ? $all_records : [];
-        $saved_cats    = get_post_meta($post_id, $categories_key, true);
-        $active_cats   = is_array($saved_cats) ? $saved_cats : ['men', 'women'];
-        $allowed_cats  = $this->get_allowed_categories();
-        $allowed_dists = self::ALLOWED_DISTANCES;
+        $records_key = self::META_FIELDS['records'];
+        $all_records = get_post_meta($post_id, $records_key, true);
+        $all_records = is_array($all_records) ? $all_records : [];
         ?>
         <style>
-        .rp-record-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; padding: 8px; background: #f6f7f7; border-radius: 4px; }
-        .rp-record-row select,
-        .rp-record-row input { margin: 0 !important; }
-        .rp-record-time { width: 110px !important; }
-        .rp-record-holder { width: 140px !important; }
-        .rp-record-nationality { width: 80px !important; }
-        .rp-record-year { width: 70px !important; }
-        .rp-record-remove { white-space: nowrap; color: #b32d2e; font-size: 12px; }
-        .rp-record-remove input { margin-right: 3px; }
-        .rp-records-category { margin-top: 12px; }
-        .rp-records-category legend { font-weight: 600; padding: 0 4px; }
-        .rp-add-record { margin-top: 4px !important; }
+        .rp-record-row { display: grid; grid-template-columns: 80px 1fr 110px 140px 90px 80px 60px; gap: 6px; align-items: center; margin-bottom: 6px; padding: 8px; background: #f6f7f7; border-radius: 4px; }
+        .rp-record-row input,
+        .rp-record-row select { margin: 0 !important; }
+        .rp-record-gender { display: flex; gap: 6px; white-space: nowrap; }
+        .rp-record-gender label { font-size: 12px; display: flex; align-items: center; gap: 2px; }
+        .rp-record-remove { white-space: nowrap; color: #b32d2e; font-size: 12px; text-align: right; }
+        .rp-record-remove input { margin-right: 2px; }
+        .rp-records-header { display: grid; grid-template-columns: 80px 1fr 110px 140px 90px 80px 60px; gap: 6px; padding: 4px 8px; font-weight: 600; font-size: 11px; color: #555; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
         </style>
-        <?php
-        foreach ($active_cats as $cat) :
-            if (!in_array($cat, $allowed_cats, true)) continue;
-            $cat_records = array_values(array_filter($all_records, fn($r) => ($r['category'] ?? '') === $cat));
-        ?>
-        <fieldset class="rp-records-category" data-category="<?php echo esc_attr($cat); ?>">
-            <legend><?php echo esc_html(ucfirst($cat) . ' ' . __('Records', 'runpartner')); ?></legend>
-            <div class="rp-records-rows" data-category="<?php echo esc_attr($cat); ?>">
-                <?php foreach ($cat_records as $index => $record) : ?>
+        <fieldset>
+            <legend><?php esc_html_e('Course Records', 'runpartner'); ?></legend>
+            <p class="description"><?php esc_html_e('Add course records for each gender and event distance. Event name is free text — enter something like "Kharduungla Marathon" or "Silk Route Ultra - 122km".', 'runpartner'); ?></p>
+            <div class="rp-records-header">
+                <span><?php esc_html_e('Gender', 'runpartner'); ?></span>
+                <span><?php esc_html_e('Event Name', 'runpartner'); ?></span>
+                <span><?php esc_html_e('Time', 'runpartner'); ?></span>
+                <span><?php esc_html_e('Holder', 'runpartner'); ?></span>
+                <span><?php esc_html_e('Nat.', 'runpartner'); ?></span>
+                <span><?php esc_html_e('Year', 'runpartner'); ?></span>
+                <span></span>
+            </div>
+            <div id="rp-records-rows">
+                <?php foreach ($all_records as $index => $record) :
+                    $gender = $record['gender'] ?? $record['category'] ?? 'men';
+                    $event_name = $record['event_name'] ?? $record['distance'] ?? '';
+                ?>
                 <div class="rp-record-row">
-                    <input type="hidden" name="<?php echo esc_attr($records_key); ?>[<?php echo (int) $index; ?>][category]" value="<?php echo esc_attr($cat); ?>" />
-                    <select name="<?php echo esc_attr($records_key); ?>[<?php echo (int) $index; ?>][distance]">
-                        <option value=""><?php esc_html_e('Select distance', 'runpartner'); ?></option>
-                        <?php foreach ($allowed_dists as $dist) : ?>
-                            <option value="<?php echo esc_attr($dist); ?>" <?php selected($record['distance'] ?? '', $dist); ?>><?php echo esc_html($dist); ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                    <input type="text" name="<?php echo esc_attr($records_key); ?>[<?php echo (int) $index; ?>][time]" value="<?php echo esc_attr($record['time'] ?? ''); ?>" placeholder="<?php esc_attr_e('Time (e.g. 2:01:09)', 'runpartner'); ?>" class="rp-record-time" />
-                    <input type="text" name="<?php echo esc_attr($records_key); ?>[<?php echo (int) $index; ?>][holder]" value="<?php echo esc_attr($record['holder'] ?? ''); ?>" placeholder="<?php esc_attr_e('Athlete name', 'runpartner'); ?>" class="rp-record-holder" />
-                    <input type="text" name="<?php echo esc_attr($records_key); ?>[<?php echo (int) $index; ?>][nationality]" value="<?php echo esc_attr($record['nationality'] ?? ''); ?>" placeholder="<?php esc_attr_e('Nat.', 'runpartner'); ?>" class="rp-record-nationality" />
-                    <input type="number" name="<?php echo esc_attr($records_key); ?>[<?php echo (int) $index; ?>][year]" value="<?php echo esc_attr($record['year'] ?? ''); ?>" placeholder="<?php esc_attr_e('Year', 'runpartner'); ?>" class="rp-record-year" min="1900" max="<?php echo (int) date('Y'); ?>" />
+                    <div class="rp-record-gender">
+                        <label><input type="radio" name="<?php echo esc_attr($records_key); ?>[<?php echo (int) $index; ?>][gender]" value="men" <?php checked($gender, 'men'); ?> /> <?php esc_html_e('M', 'runpartner'); ?></label>
+                        <label><input type="radio" name="<?php echo esc_attr($records_key); ?>[<?php echo (int) $index; ?>][gender]" value="women" <?php checked($gender, 'women'); ?> /> <?php esc_html_e('W', 'runpartner'); ?></label>
+                    </div>
+                    <input type="text" name="<?php echo esc_attr($records_key); ?>[<?php echo (int) $index; ?>][event_name]" value="<?php echo esc_attr($event_name); ?>" placeholder="<?php esc_attr_e('e.g. Kharduungla Marathon', 'runpartner'); ?>" />
+                    <input type="text" name="<?php echo esc_attr($records_key); ?>[<?php echo (int) $index; ?>][time]" value="<?php echo esc_attr($record['time'] ?? ''); ?>" placeholder="<?php esc_attr_e('e.g. 2:01:09', 'runpartner'); ?>" />
+                    <input type="text" name="<?php echo esc_attr($records_key); ?>[<?php echo (int) $index; ?>][holder]" value="<?php echo esc_attr($record['holder'] ?? ''); ?>" placeholder="<?php esc_attr_e('Athlete name', 'runpartner'); ?>" />
+                    <input type="text" name="<?php echo esc_attr($records_key); ?>[<?php echo (int) $index; ?>][nationality]" value="<?php echo esc_attr($record['nationality'] ?? ''); ?>" placeholder="<?php esc_attr_e('Nat.', 'runpartner'); ?>" />
+                    <input type="number" name="<?php echo esc_attr($records_key); ?>[<?php echo (int) $index; ?>][year]" value="<?php echo esc_attr($record['year'] ?? ''); ?>" placeholder="<?php esc_attr_e('Year', 'runpartner'); ?>" min="1900" max="<?php echo (int) date('Y'); ?>" />
                     <label class="rp-record-remove">
                         <input type="checkbox" name="<?php echo esc_attr($records_key); ?>[<?php echo (int) $index; ?>][remove]" value="1" />
                         <?php esc_html_e('Remove', 'runpartner'); ?>
@@ -1021,35 +1028,32 @@ final class RunPartner_Events_CPT {
                 </div>
                 <?php endforeach; ?>
             </div>
-            <button type="button" class="button rp-add-record" data-category="<?php echo esc_attr($cat); ?>">
-                <?php echo esc_html(sprintf(__('Add %s Record', 'runpartner'), ucfirst($cat))); ?>
+            <button type="button" id="rp-add-record" class="button">
+                <?php esc_html_e('Add Record', 'runpartner'); ?>
             </button>
         </fieldset>
-        <?php endforeach; ?>
         <script>
-        (function() {
-            const recordsKey = '<?php echo esc_js($records_key); ?>';
-            document.querySelectorAll('.rp-add-record').forEach(function(btn) {
-                btn.addEventListener('click', function() {
-                    const category = this.dataset.category;
-                    const rowsContainer = this.parentElement.querySelector('.rp-records-rows');
-                    if (!rowsContainer) return;
-                    const count = document.querySelectorAll('.rp-record-row').length;
-                    const row = document.createElement('div');
-                    row.className = 'rp-record-row';
-                    row.innerHTML = [
-                        '<input type="hidden" name="' + recordsKey + '[' + count + '][category]" value="' + category + '" />',
-                        '<select name="' + recordsKey + '[' + count + '][distance]"><option value=""><?php echo esc_js(__('Select distance', 'runpartner')); ?></option><?php foreach (self::ALLOWED_DISTANCES as $dist) : ?><option value="<?php echo esc_js($dist); ?>"><?php echo esc_js($dist); ?></option><?php endforeach; ?></select>',
-                        '<input type="text" name="' + recordsKey + '[' + count + '][time]" placeholder="<?php echo esc_js(__('Time (e.g. 2:01:09)', 'runpartner')); ?>" class="rp-record-time" />',
-                        '<input type="text" name="' + recordsKey + '[' + count + '][holder]" placeholder="<?php echo esc_js(__('Athlete name', 'runpartner')); ?>" class="rp-record-holder" />',
-                        '<input type="text" name="' + recordsKey + '[' + count + '][nationality]" placeholder="<?php echo esc_js(__('Nat.', 'runpartner')); ?>" class="rp-record-nationality" />',
-                        '<input type="number" name="' + recordsKey + '[' + count + '][year]" placeholder="<?php echo esc_js(__('Year', 'runpartner')); ?>" class="rp-record-year" min="1900" max="<?php echo (int) date('Y'); ?>" />',
-                        '<label class="rp-record-remove"><input type="checkbox" name="' + recordsKey + '[' + count + '][remove]" value="1" /> <?php echo esc_js(__('Remove', 'runpartner')); ?></label>'
-                    ].join('');
-                    rowsContainer.appendChild(row);
-                });
-            });
-        })();
+        document.getElementById('rp-add-record')?.addEventListener('click', function() {
+            const wrapper = document.getElementById('rp-records-rows');
+            if (!wrapper) return;
+            const count = wrapper.querySelectorAll('.rp-record-row').length;
+            const key = '<?php echo esc_js($records_key); ?>';
+            const html = [
+                '<div class="rp-record-row">',
+                '<div class="rp-record-gender">',
+                '<label><input type="radio" name="' + key + '[' + count + '][gender]" value="men" checked /> <?php echo esc_js(__('M', 'runpartner')); ?></label>',
+                '<label><input type="radio" name="' + key + '[' + count + '][gender]" value="women" /> <?php echo esc_js(__('W', 'runpartner')); ?></label>',
+                '</div>',
+                '<input type="text" name="' + key + '[' + count + '][event_name]" placeholder="<?php echo esc_js(__('e.g. Kharduungla Marathon', 'runpartner')); ?>" />',
+                '<input type="text" name="' + key + '[' + count + '][time]" placeholder="<?php echo esc_js(__('e.g. 2:01:09', 'runpartner')); ?>" />',
+                '<input type="text" name="' + key + '[' + count + '][holder]" placeholder="<?php echo esc_js(__('Athlete name', 'runpartner')); ?>" />',
+                '<input type="text" name="' + key + '[' + count + '][nationality]" placeholder="<?php echo esc_js(__('Nat.', 'runpartner')); ?>" />',
+                '<input type="number" name="' + key + '[' + count + '][year]" placeholder="<?php echo esc_js(__('Year', 'runpartner')); ?>" min="1900" max="<?php echo (int) date('Y'); ?>" />',
+                '<label class="rp-record-remove"><input type="checkbox" name="' + key + '[' + count + '][remove]" value="1" /> <?php echo esc_js(__('Remove', 'runpartner')); ?></label>',
+                '</div>'
+            ].join('');
+            wrapper.insertAdjacentHTML('beforeend', html);
+        });
         </script>
         <?php
     }
@@ -1067,12 +1071,14 @@ final class RunPartner_Events_CPT {
             if (isset($entry['remove']) && $entry['remove']) {
                 continue;
             }
-            if (empty($entry['category']) || empty($entry['distance'])) {
+            $gender = isset($entry['gender']) ? sanitize_text_field(wp_unslash($entry['gender'])) : '';
+            $event_name = isset($entry['event_name']) ? sanitize_text_field(wp_unslash($entry['event_name'])) : '';
+            if (!in_array($gender, ['men', 'women'], true) || empty($event_name)) {
                 continue;
             }
             $records[] = [
-                'category'    => sanitize_text_field(wp_unslash($entry['category'])),
-                'distance'    => sanitize_text_field(wp_unslash($entry['distance'])),
+                'gender'      => $gender,
+                'event_name'  => $event_name,
                 'time'        => sanitize_text_field(wp_unslash($entry['time'] ?? '')),
                 'holder'      => sanitize_text_field(wp_unslash($entry['holder'] ?? '')),
                 'nationality' => sanitize_text_field(wp_unslash($entry['nationality'] ?? '')),
@@ -1084,24 +1090,6 @@ final class RunPartner_Events_CPT {
             delete_post_meta($post_id, $meta_key);
         } else {
             update_post_meta($post_id, $meta_key, $records);
-        }
-    }
-
-    private function save_categories(int $post_id): void {
-        $meta_key = self::META_FIELDS['categories'];
-
-        if (empty($_POST[$meta_key]) || !is_array($_POST[$meta_key])) {
-            delete_post_meta($post_id, $meta_key);
-            return;
-        }
-
-        $categories = array_map('sanitize_text_field', array_map('wp_unslash', $_POST[$meta_key]));
-        $categories = array_values(array_intersect($categories, $this->get_allowed_categories()));
-
-        if (empty($categories)) {
-            delete_post_meta($post_id, $meta_key);
-        } else {
-            update_post_meta($post_id, $meta_key, $categories);
         }
     }
 
