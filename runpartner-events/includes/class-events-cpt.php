@@ -30,8 +30,9 @@ final class RunPartner_Events_CPT {
         'history'            => '_rp_event_history',
         'course_overview'    => '_rp_event_course_overview',
         'editions'           => '_rp_event_editions',
-        'featured'           => '_rp_event_featured',
-        'famous_athletes'    => '_rp_event_famous_athletes',
+        'featured'               => '_rp_event_featured',
+        'featured_front_page'    => '_rp_event_featured_front_page',
+        'famous_athletes'        => '_rp_event_famous_athletes',
     ];
 
     private const ALLOWED_DISTANCES = [
@@ -316,6 +317,8 @@ final class RunPartner_Events_CPT {
                         $value = is_array($value) ? $value : ($value !== '' ? explode(',', $value) : []);
                     } elseif ($field_key === 'featured') {
                         $value = (bool) $value;
+                    } elseif ($field_key === 'featured_front_page') {
+                        $value = (bool) $value;
                     } elseif ($field_key === 'records') {
                         $value = is_array($value) ? $value : [];
                         $value = array_map(function ($record) {
@@ -431,8 +434,9 @@ final class RunPartner_Events_CPT {
                         ],
                     ],
                 ],
-                'featured'            => ['type' => 'boolean'],
-                'famous_athletes'      => [
+                'featured'               => ['type' => 'boolean'],
+                'featured_front_page'    => ['type' => 'boolean'],
+                'famous_athletes'        => [
                     'type'  => 'array',
                     'items' => [
                         'type'       => 'object',
@@ -522,6 +526,8 @@ final class RunPartner_Events_CPT {
         $this->render_famous_athletes_field($post->ID);
 
         $this->render_featured_checkbox($post->ID);
+
+        $this->render_featured_front_page_checkbox($post->ID);
 
         echo '</div>';
     }
@@ -617,6 +623,7 @@ final class RunPartner_Events_CPT {
             'categories'                => $value,
             'famous_athletes'           => $this->sanitize_famous_athletes($value),
             'featured'                  => absint($value),
+            'featured_front_page'       => absint($value),
             'distances'                 => $value,
             'history'                   => sanitize_textarea_field($value),
             default                     => sanitize_text_field($value),
@@ -824,6 +831,11 @@ final class RunPartner_Events_CPT {
                 'description' => 'Mark as featured event',
                 'default'     => false,
             ],
+            'featured_front_page' => [
+                'type'        => 'boolean',
+                'description' => 'Show on front page hero',
+                'default'     => false,
+            ],
             'famous_athletes' => [
                 'type'        => 'array',
                 'description' => 'Famous athletes associated with this event',
@@ -955,6 +967,24 @@ final class RunPartner_Events_CPT {
                     <?php checked($checked); ?>
                 />
                 <?php esc_html_e('Mark as featured event', 'runpartner'); ?>
+            </label>
+        </p>
+        <?php
+    }
+
+    private function render_featured_front_page_checkbox(int $post_id): void {
+        $meta_key = self::META_FIELDS['featured_front_page'];
+        $checked  = (bool) get_post_meta($post_id, $meta_key, true);
+        ?>
+        <p>
+            <label>
+                <input
+                    type="checkbox"
+                    name="<?php echo esc_attr($meta_key); ?>"
+                    value="1"
+                    <?php checked($checked); ?>
+                />
+                <?php esc_html_e('Show on front page hero', 'runpartner'); ?>
             </label>
         </p>
         <?php
